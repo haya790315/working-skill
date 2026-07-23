@@ -1,0 +1,23 @@
+{
+  "name": "powerful-skills",
+  "owner": {
+    "name": "haya790315",
+    "email": "haya790315@gmail.com"
+  },
+  "metadata": {
+    "description": "作業用スキルのプラグインマーケットプレイス。開発向けと日常業務向けの2つのプラグインを提供する。",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "develop",
+      "source": "./plugins/develop",
+      "description": "コーディング開発向けのスキル集"
+    },
+    {
+      "name": "daily",
+      "source": "./plugins/daily",
+      "description": "日常業務向けのスキル集"
+    }
+  ]
+}
