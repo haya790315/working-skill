@@ -5,10 +5,15 @@
     "email": "haya790315@gmail.com"
   },
   "metadata": {
-    "description": "作業用スキルのプラグインマーケットプレイス。開発向けと日常業務向けの2つのプラグインを提供する。",
-    "version": "0.1.0"
+    "description": "作業用スキルのプラグインマーケットプレイス。設計工程向け・コーディング開発向け・日常業務向けの3つのプラグインを提供する。",
+    "version": "0.2.0"
   },
   "plugins": [
+    {
+      "name": "design",
+      "source": "./plugins/design",
+      "description": "要求調査から振り返りまで、設計・報告工程を17の成果物に分けて進めるスキル集"
+    },
     {
       "name": "develop",
       "source": "./plugins/develop",

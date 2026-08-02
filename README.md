@@ -3,12 +3,18 @@
 作業用スキルのプラグインマーケットプレイス。
 
 このリポジトリは Claude Code のプラグインマーケットプレイスとして構成されている。
-現在は次の2つのプラグインを提供する（スキルは今後追加していく）。
+現在は次の3つのプラグインを提供する（スキルは今後追加していく）。
 
 | プラグイン | 用途 | パス |
 | --- | --- | --- |
+| `design` | 要求調査から振り返りまで、設計・報告工程のスキル集 | `plugins/design` |
 | `develop` | コーディング開発向けのスキル集 | `plugins/develop` |
 | `daily` | 日常業務向けのスキル集 | `plugins/daily` |
+
+`design` は**文書だけを作る**プラグインで、コードの実装・修正は一切行わない。
+上流の設計・報告工程を担当し、実装は `develop` プラグインの担当。
+設計は `/design:00-start` から始める。
+詳細は [plugins/design/readme.md](plugins/design/readme.md) を参照。
 
 ## インストール方法
 
@@ -19,6 +25,7 @@ Claude Code 上で以下を実行する。
 /plugin marketplace add haya790315/working-skill
 
 # プラグインをインストール
+/plugin install design@powerful-skills
 /plugin install develop@powerful-skills
 /plugin install daily@powerful-skills
 ```
