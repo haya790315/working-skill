@@ -1,58 +1,85 @@
 ---
 name: mobile-dev
 description: >
-  【手机远程开发】从手机通过 Remote Control 驱动电脑端 Claude 做开发时的行为契约。
-  回复压到手机读得完的长度；问答类的长回复切成小节，结尾用 AskUserQuestion
-  把「要深入哪一段」做成可点选项（手机上回滚去引用某一段再追问极其难操作）；
-  开工先用 Plane 票号核对 repo；UI 改动强制截图（先切 mobile 视口）；
-  不可逆动作一律先问；Plane 授权失效立刻早退不重试。
-  Use when 这个 session 是 Remote Control 驱动的（`claude remote-control` spawn 出来的，
-  用户人在手机端）——**哪怕用户没说自己在手机上也要用**：漏用的代价是把一屏 diff
-  糊到对方脸上，误用的代价只是桌面端回复短了一点，两者不对称。
-  也 use when 用户说自己在手机上 / 在外面 / 通勤中，只丢一个票号就要开工，
-  要求看 UI 截图，或要你整理现况、给方案、做调查而他在小屏幕上读。
-  触发词："/daily:mobile-dev"/"手机模式"/"我在手机上"/"从手机开发"/
-  "remote control"/"rc"/"TUMIKI-<数字>"。
+  【手机远程开发·手动开关】手机通过 Remote Control 驱动电脑端 Claude 时的行为契约
+  —— 短回复、点选追问、UI 改动强制截图、不可逆动作先问、Plane 授权失效早退。
+  **手动开关，永不自动触发**：本 session 里打一次 `/daily:mobile-dev` 打开，再打一次关掉，
+  没打过就完全不生效；也可以写 `/daily:mobile-dev on` 或 `off` 直接指定。
+argument-hint: "[on|off]"
+disable-model-invocation: true
 ---
 
-# mobile-dev — 手机远程开发
+# mobile-dev — 手机远程开发（开关式）
 
 对方在**手机小屏幕上、通勤或走路中**读你的输出：看不了长 diff、读不了桌面宽度的截图、
 来不及审查你做了什么，**而且打字很贵**。下面每条规则都从这两条推出来。
 
+**开关说了算，不要自己判断。**本 skill 只在用户亲手打了 `/daily:mobile-dev` 之后才生效，
+不会自己触发。不要查进程链、不要看 cwd、不要从用户的话里推测他是不是在手机上，也不要因为
+「看起来像手机场景」就先按手机模式回 —— 开着就是手机模式，关着就不是，没有第三种情况。
+（以前那套自动判定为什么弃用，见 [REFERENCE.md](REFERENCE.md)，那条路不要再走。）
+
 **本 skill 只读 Plane。** 票标题里的 `[DEV-xxxx]` 是 Linear 侧的镜像编号，只作对照，不去查 Linear
 （手机端没有 Linear connector，写成要查它就是写一个跑不动的步骤）。
 
-## 先确认：这个 session 是不是手机驱动的
+## Step 0 — 先切开关（每次被调用都要做，不可跳过）
 
-`claude remote-control` 不会往 system prompt 里注入任何标记，所以你**看不到**现成的标志位。
-想确认就自己查 —— 你的进程祖先链上有没有那台 server：
+用户这次跟在指令后面写的参数：**$ARGUMENTS**
+
+空的、或者上面还是字面量 `$ARGUMENTS` → 当作**没给参数**，也就是「切换」。
+写了 `on` / `开` / `打开` → `on`；写了 `off` / `关` / `关闭` → `off`。
+
+把 `want=` 改成判出来的那个值再跑（marker 按 session id 命名，只管当前这个 session）：
 
 ```bash
-pat="remote""-control"                      # 必须拆开写，见下
-p=$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')   # 从父进程起，跳过自己
-while [ "${p:-1}" -gt 1 ]; do
-  case "$(ps -o command= -p $p 2>/dev/null)" in *"$pat"*) echo MOBILE; break;; esac
-  p=$(ps -o ppid= -p $p 2>/dev/null | tr -d ' ')
-done
+want=toggle   # on / off / toggle 三选一
+src=""        # 这份 SKILL.md 的绝对路径，知道就填；上下文被压缩后靠它找回规约
+
+d="${TMPDIR:-/tmp}/claude-mobile-dev"; mkdir -p "$d"
+f="$d/${CLAUDE_CODE_SESSION_ID:-${CLAUDE_PID:-$PPID}}"
+case "$want" in
+  on)  printf '%s\n' "$src" > "$f"; s=ON ;;
+  off) rm -f "$f"; s=OFF ;;
+  *)   if [ -e "$f" ]; then rm -f "$f"; s=OFF; else printf '%s\n' "$src" > "$f"; s=ON; fi ;;
+esac
+echo "mobile-dev: $s"
 ```
 
-**那两处别改回去。**`ps -o command=` 会读到你正在跑的这行脚本本身，字面量写
-`*remote-control*` 就会自己匹配自己，从第 0 层直接返回 MOBILE —— 一个永远说是的
-检测器比没有更糟，它会让你以为自己确认过了。拆写字符串加跳过自身，两个一起才绕得开。
+**照它打印的那个字走**，不要自己判断现在该开还是该关。
+空参数是「切换」，所以想确认状态的时候别用它 —— 用 `on` / `off`，重复打同一个不会翻面。
 
-命中长这样（`rc` 用 tmux 起也照样查得到，tmux 不会挡住这条链）：
+### 跑出 ON
+
+一行告诉用户，别多写：
 
 ```
-[0] claude ... --print --sdk-url ...                     ← 你
-[1] claude remote-control --name tumiki --spawn same-dir  ← server
+手机模式 ON — 短回复 / 点选追问 / UI 改动截图 / 不可逆动作先问
 ```
 
-**没命中也不等于安全。**从 claude.ai/code 网页端连进来的路径没验证过，进程树可能不长这样。
-**拿不准就按手机模式走**：它在桌面端的副作用只是回复短一点、多几个可点选项；
-反过来在手机上按桌面模式回复，对方要在 6 寸屏上滚三屏 diff —— 代价完全不对称。
+下面的章节从现在起生效，**直到本 session 结束、或用户再打一次 `/daily:mobile-dev`**。
+规约已经在你的上下文里了，不用重新调用这个 skill。上下文被压缩后只记得「开着」却忘了细则：
+`cat` 那个 marker 文件，里面是这份 SKILL.md 的路径（当初填了 `src` 才有），重读一遍。
 
-## Step 1 — 开工三件事（每次必跑，不可跳过）
+### 跑出 OFF
+
+一行告诉用户：
+
+```
+手机模式 OFF — 回到一般模式
+```
+
+**然后下面的章节一条都不要执行。**之前载入的那一份规约还留在你的上下文里，但从这一刻起
+它不再是你的行为契约：不要再压缩回复长度、不要再自动加点选项、不要再按红线表拦动作，
+按平常的方式回复就好。要再打开，用户会自己再打一次 `/daily:mobile-dev`。
+
+---
+
+**以下所有章节只在 ON 的时候有效。**
+
+## Step 1 — 开工三件事（要动手做事时跑，不可跳过）
+
+**前提是用户给了票号、要你开始做事。**开关可能是半路才打开的，也可能他只是想在手机上
+问你点东西 —— 没票号、不动代码，就跳过这三件事，直接按下面的输出规约回答。
 
 ### 1. 解析票号
 
@@ -84,7 +111,7 @@ TUMIKI-53「[DEV-2511] 導入状況を新UIで出す」
 ## 输出规约
 
 - **先给结论，3 行以内。**细节等对方问
-- 不贴超过 20 行的 diff → 改成「改了 N 个文件：<清单>」
+- 真要贴 diff，上限 20 行；超了改成「改了 N 个文件：<清单>」
 - 不贴完整 log → 只贴失败的那几行
 - 表格最多 3 列
 - 文件路径写成 markdown 链接，手机上可点
@@ -116,6 +143,9 @@ Claude Code 默认告诉你 `AskUserQuestion` 只在「卡住、需要用户拍�
 
 执行类保持现在的简短汇报 —— 那种回复本来就没有「哪一段要深入」的问题，硬加选项只会变吵。
 
+这一节说的是「展开哪一段」那种点选。执行类照样会调 `AskUserQuestion`，但那是下面
+「动作红线」的批准问，两回事，不冲突。
+
 ### 怎么做
 
 **1. 回复切成 2-4 个带标签的小节。**
@@ -136,8 +166,7 @@ Claude Code 默认告诉你 `AskUserQuestion` 只在「卡住、需要用户拍�
 - **`multiSelect: true`** —— 让他一次勾两三段，省掉好几轮往返
 - 每个选项的 `description` 写**选了会发生什么**，不是把小节内容再抄一遍。
   他刚读完正文，重复只是占屏幕
-- **自由输入框是自动有的**（「Other」），不用自己造一个选项去模拟。
-  但也别指望他用 —— 选项设计得好，他就不用打字了
+- 系统自动带「Other」自由输入，别自己造一个去模拟 —— 但也别指望他用
 - **留一格给「我这次没查的」。**选项不必每格都对应正文里的一段。
   你知道自己漏了什么 —— 没翻的目录、没验证的分支、口头带过的假设 ——
   把它也做成一个选项（`API 路由谁在挡 → 去翻 /api/* 各自的认证写法`）。
@@ -186,7 +215,10 @@ Claude Code 默认告诉你 `AskUserQuestion` 只在「卡住、需要用户拍�
 
 **触发条件（命中任一就必截，不得自行判断"这次看不出差别"）：**
 
-`*.tsx` `*.jsx` `*.vue` `*.svelte` `*.css` `*.scss` `**/components/**` `**/app/**` `**/pages/**` `**/ui/**`
+`*.tsx` `*.jsx` `*.vue` `*.svelte` `*.css` `*.scss` `**/components/**` `**/pages/**` `**/ui/**`
+
+`**/app/**` 也算，但**扣掉 `**/app/api/**`** —— Next.js 的 app router 底下混着后端路由，
+改 `route.ts` 没有画面可截，别在那儿空跑一趟 preview。
 
 1. 确认 `.claude/launch.json` 里有该 app 的配置 —— **没有就先补上**（端口见 [REFERENCE.md](REFERENCE.md)），不要因此放弃
 2. `preview_start` `name=<app>`

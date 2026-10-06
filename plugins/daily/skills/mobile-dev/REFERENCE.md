@@ -65,7 +65,11 @@ rcq() {
 
 ## 怎么知道这个 session 是不是 Remote Control 的
 
-**查过了，没有现成的标志位。**下面是走过的死路，别再走一遍：
+**这一节是历史，不是做法。**2026-09-23 起 SKILL.md 改成手动开关 —— 用户打一次
+`/daily:mobile-dev` 才生效，开关说了算，**skill 在任何时候都不做环境判定**。
+下面记的是当初为了自动判定走过的路，留着备查，免得哪天又从头试一遍；不要把它写回 SKILL.md。
+
+**没有现成的标志位。**试过这些：
 
 | 试过的 | 结果 |
 |---|---|
@@ -74,24 +78,46 @@ rcq() {
 | transcript 的 `entrypoint` 字段 | 有值（`sdk-cli` / `claude-vscode` / `claude-desktop` / `cli`），但那是**写进日志的**元数据，跑的时候读不到 |
 | `CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX` | 真实存在，但只管自动命名的前缀，**默认不设**，靠它判断会漏 |
 
-**能用的只有进程链**，脚本在 SKILL.md。2026-09-23 实测，`rc` 经 tmux 起的 session 也查得到：
+**唯一能用的是进程链** —— 你的进程祖先链上有没有那台 server。2026-09-23 实测，
+`rc` 经 tmux 起的 session 也查得到（tmux 不会挡住这条链）：
+
+```bash
+pat="remote""-control"                           # 必须拆开写，见下
+p=$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')   # 从父进程起，跳过自己
+while [ "${p:-1}" -gt 1 ]; do
+  case "$(ps -o command= -p $p 2>/dev/null)" in *"$pat"*) echo MOBILE; break;; esac
+  p=$(ps -o ppid= -p $p 2>/dev/null | tr -d ' ')
+done
+```
+
+**那两处别改回去。**`ps -o command=` 会读到你正在跑的这行脚本本身，字面量写
+`*remote-control*` 就会自己匹配自己，从第 0 层直接返回 MOBILE —— 一个永远说是的
+检测器比没有更糟，它会让你以为自己确认过了。拆写字符串加跳过自身，两个一起才绕得开。
+
+命中长这样：
 
 ```
 [0] claude ... --print --sdk-url ...                      ← spawn 出来的 session
 [1] claude remote-control --name tumiki --spawn same-dir  ← server
 ```
 
-### 如果哪天想要「必定触发」
+**但没命中不等于不是手机。**从 claude.ai/code 网页端连进来的路径没验证过，进程树可能不长这样。
+一个会漏判的检测器，配上「拿不准就按手机模式走」的兜底，实际效果就是桌面端也常年被它压着回复 ——
+这正是最后不靠它、改成用户手动开关的原因。
 
-纯 skill 侧做不到确定性 —— description 再 pushy 也只是提高概率。要 100%，得走这条：
+### 想让它自动开怎么办
+
+手动开关治的是「不该开的时候开了」。如果哪天嫌每次都要打一次麻烦，想「一进 `rc` 就自动开」，
+纯 skill 侧做不到确定性（description 再 pushy 也只是提高概率），得走这条：
 
 1. `~/.zshrc` 的 `rc()` 里给 server 挂个环境变量（spawn 的子 session 会继承）：
    `cmd="caffeinate -is env CLAUDE_MOBILE=1 claude remote-control --name $name --spawn same-dir"`
-2. `~/.claude/settings.json` 加 SessionStart hook，读到 `CLAUDE_MOBILE=1` 就往
-   `hookSpecificOutput.additionalContext` 里写一句「本 session 用 mobile-dev」
+2. `~/.claude/settings.json` 加 SessionStart hook，读到 `CLAUDE_MOBILE=1` 就替这个 session 建好
+   SKILL.md 里那个 marker 文件（`${TMPDIR:-/tmp}/claude-mobile-dev/<session_id>`），
+   再往 `hookSpecificOutput.additionalContext` 里写一句「本 session 已开手机模式，按 mobile-dev 走」
 
 **2026-09-23 评估后没做**，因为要动 `~/.zshrc` 和全局 settings 两个文件，换机器就得重配一次，
-而 description + 进程自检已经够用。想改主意时按上面两步走。
+而手动打一次 `/daily:mobile-dev` 便宜得多。真要做的话，关掉仍然是再打一次 `/daily:mobile-dev`（删 marker）。
 
 ## AskUserQuestion 的硬约束
 
